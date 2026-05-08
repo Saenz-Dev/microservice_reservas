@@ -45,10 +45,11 @@ if (strpos($route, '/usuarios') === 0) {
     }
 } elseif (strpos($route, '/cabanias') === 0) {
     $url = "http://localhost/microservices/cabanias-service/index.php" . $path;
-    // Pasar query string si existe
-    if (!empty($queryString)) {
-        $url .= '?' . $queryString;
-    }
+    } elseif (strpos($route, '/facturas') === 0) {
+        $url = "http://localhost/microservices/factura-service/index.php" . $path;
+        if (!empty($queryString)) {
+            $url .= '?' . $queryString;
+        }
 } else {
     http_response_code(404);
     echo json_encode(["code" => "ROUTE_NOT_FOUND", "error" => "Ruta no encontrada"]);
@@ -78,6 +79,25 @@ if (empty($authHeader) && function_exists('getallheaders')) {
 
 if (!empty($authHeader)) {
     $forwardHeaders[] = 'Authorization: ' . $authHeader;
+}
+
+// reenviar X-Internal-Key cuando exista (para llamadas internas entre servicios)
+$internalKey = $_SERVER['HTTP_X_INTERNAL_KEY'] ?? ($_SERVER['REDIRECT_HTTP_X_INTERNAL_KEY'] ?? '');
+if (empty($internalKey) && function_exists('getallheaders')) {
+    $headers = $headers ?? getallheaders();
+    $internalKey = $headers['X-Internal-Key'] ?? ($headers['x-internal-key'] ?? '');
+}
+if (!empty($internalKey)) {
+    $forwardHeaders[] = 'X-Internal-Key: ' . $internalKey;
+}
+
+// reenviar X-Requested-With si está presente
+$reqWith = $_SERVER['HTTP_X_REQUESTED_WITH'] ?? '';
+if (empty($reqWith) && function_exists('getallheaders')) {
+    $reqWith = ($headers['X-Requested-With'] ?? $headers['x-requested-with'] ?? '');
+}
+if (!empty($reqWith)) {
+    $forwardHeaders[] = 'X-Requested-With: ' . $reqWith;
 }
 
 curl_setopt($ch, CURLOPT_HTTPHEADER, $forwardHeaders);

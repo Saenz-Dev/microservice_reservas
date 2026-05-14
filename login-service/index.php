@@ -266,24 +266,27 @@ switch ($method) {
                     "message" => "Si el correo existe, recibirás instrucciones para recuperar la contraseña"
                 ];
 
-                try {
-                    enviarCorreoRecuperacion($user['correo'], $resetToken);
-                } catch (MailException $e) {
-                    http_response_code(500);
-                    echo json_encode([
-                        "status" => 500,
-                        "code" => "EMAIL_SEND_FAILED",
-                        "error" => "No se pudo enviar el correo de recuperación"
-                    ]);
-                    break;
-                } catch (Exception $e) {
-                    http_response_code(500);
-                    echo json_encode([
-                        "status" => 500,
-                        "code" => "EMAIL_CONFIGURATION_ERROR",
-                        "error" => "Configuración de correo incompleta o inválida"
-                    ]);
-                    break;
+                // Solo intentar enviar email en PRODUCCIÓN (RESET_TOKEN_RETURN_IN_RESPONSE = false)
+                if (!RESET_TOKEN_RETURN_IN_RESPONSE) {
+                    try {
+                        enviarCorreoRecuperacion($user['correo'], $resetToken);
+                    } catch (MailException $e) {
+                        http_response_code(500);
+                        echo json_encode([
+                            "status" => 500,
+                            "code" => "EMAIL_SEND_FAILED",
+                            "error" => "No se pudo enviar el correo de recuperación"
+                        ]);
+                        break;
+                    } catch (Exception $e) {
+                        http_response_code(500);
+                        echo json_encode([
+                            "status" => 500,
+                            "code" => "EMAIL_CONFIGURATION_ERROR",
+                            "error" => "Configuración de correo incompleta o inválida"
+                        ]);
+                        break;
+                    }
                 }
 
                 if (RESET_TOKEN_RETURN_IN_RESPONSE) {

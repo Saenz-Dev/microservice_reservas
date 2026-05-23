@@ -12,6 +12,12 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-W
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
 header("Content-Type: application/json");
 
+// Manejo de solicitudes OPTIONS (preflight)
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
 $request = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $method = strtolower($_SERVER['REQUEST_METHOD']);
 
@@ -151,7 +157,56 @@ switch ($method) {
         }
         break;
     case 'post':
-        if ($route == '/cabanias/upload') {
+        if ($route == '/cabanias') {
+            if (!validarTokenOrFail()) {
+                break;
+            }
+
+            $data = json_decode(file_get_contents('php://input'), true);
+            
+            // Validar campos requeridos
+            if (empty($data['nombre']) || empty($data['ubicacion'])) {
+                http_response_code(400);
+                echo json_encode(["status" => 400, "code" => "MISSING_FIELDS", "error" => "Faltan campos requeridos"]);
+                break;
+            }
+
+            $nombre = $data['nombre'];
+            $capacidad = (int)($data['capacidad'] ?? 1);
+            $precio_por_persona = (float)($data['precio_por_persona'] ?? 0);
+            $url_imagen = $data['url_imagen'] ?? null;
+
+            try {
+                $query = "INSERT INTO cabania (nombre, capacidad, precio_por_persona, estado, url_imagen) 
+                          VALUES (:nombre, :capacidad, :precio_por_persona, :estado, :url_imagen)";
+                $statement = Conection::getInstance()->getConection()->prepare($query);
+                $statement->bindValue(':nombre', $nombre, PDO::PARAM_STR);
+                $statement->bindValue(':capacidad', $capacidad, PDO::PARAM_INT);
+                $statement->bindValue(':precio_por_persona', $precio_por_persona, PDO::PARAM_STR);
+                $statement->bindValue(':estado', 1, PDO::PARAM_INT);
+                $statement->bindValue(':url_imagen', $url_imagen, PDO::PARAM_STR);
+                $statement->execute();
+
+                $id_cabania = Conection::getInstance()->getConection()->lastInsertId();
+
+                http_response_code(201);
+                echo json_encode([
+                    "status" => 201,
+                    "message" => "Cabaña creada exitosamente",
+                    "data" => [
+                        "id_cabania" => (int)$id_cabania,
+                        "nombre" => $nombre,
+                        "capacidad" => $capacidad,
+                        "precio_por_persona" => $precio_por_persona,
+                        "url_imagen" => null,
+                        "estado" => 1
+                    ]
+                ]);
+            } catch (Exception $e) {
+                http_response_code(500);
+                echo json_encode(["status" => 500, "code" => "DB_ERROR", "error" => $e->getMessage()]);
+            }
+        } elseif ($route == '/cabanias/upload') {
             if (!validarTokenOrFail()) {
                 break;
             }
@@ -163,9 +218,87 @@ switch ($method) {
         }
         break;
     case 'put':
-        //
+        if ($route == '/cabanias') {
+            if (!validarTokenOrFail()) {
+                break;
+            }
+
+            $data = json_decode(file_get_contents('php://input'), true);
+            
+            // Validar campos requeridos
+            if (empty($data['id_cabania']) || empty($data['nombre'])) {
+                http_response_code(400);
+                echo json_encode(["status" => 400, "code" => "MISSING_FIELDS", "error" => "Faltan campos requeridos"]);
+                break;
+            }
+
+            $id_cabania = (int)$data['id_cabania'];
+            $nombre = $data['nombre'];
+            $capacidad = (int)($data['capacidad'] ?? 1);
+            $precio_por_persona = (float)($data['precio_por_persona'] ?? 0);
+            $url_imagen = $data['url_imagen'] ?? null;
+
+            try {
+                $query = "UPDATE cabania SET nombre=:nombre, capacidad=:capacidad, precio_por_persona=:precio_por_persona, url_imagen=:url_imagen    WHERE id_cabania=:id_cabania";
+                $statement = Conection::getInstance()->getConection()->prepare($query);
+                $statement->bindValue(':id_cabania', $id_cabania, PDO::PARAM_INT);
+                $statement->bindValue(':nombre', $nombre, PDO::PARAM_STR);
+                $statement->bindValue(':capacidad', $capacidad, PDO::PARAM_INT);
+                $statement->bindValue(':precio_por_persona', $precio_por_persona, PDO::PARAM_STR);
+                $statement->bindValue(':url_imagen', $url_imagen, PDO::PARAM_STR);
+                $statement->execute();
+
+                if ($statement->rowCount() === 0) {
+                    http_response_code(404);
+                    echo json_encode(["status" => 404, "code" => "CABANIA_NOT_FOUND", "error" => "Cabaña no encontrada"]);
+                } else {
+                    http_response_code(200);
+                    echo json_encode(["status" => 200, "message" => "Cabaña actualizada exitosamente"]);
+                }
+            } catch (Exception $e) {
+                http_response_code(500);
+                echo json_encode(["status" => 500, "code" => "DB_ERROR", "error" => $e->getMessage()]);
+            }
+        } else {
+            http_response_code(404);
+            echo json_encode(["status" => 404, "code" => "ROUTE_NOT_FOUND", "error" => "Ruta no encontrada en cabanias"]);
+        }
+        break;
     case 'delete':
-        //
+        if ($route == '/cabanias') {
+            if (!validarTokenOrFail()) {
+                break;
+            }
+
+            if (!isset($_GET['id_cabania'])) {
+                http_response_code(400);
+                echo json_encode(["status" => 400, "code" => "MISSING_ID", "error" => "Falta el parámetro id_cabania"]);
+                break;
+            }
+
+            $id_cabania = (int)$_GET['id_cabania'];
+
+            try {
+                $query = "DELETE FROM cabania WHERE id_cabania = :id_cabania";
+                $statement = Conection::getInstance()->getConection()->prepare($query);
+                $statement->bindValue(':id_cabania', $id_cabania, PDO::PARAM_INT);
+                $statement->execute();
+
+                if ($statement->rowCount() === 0) {
+                    http_response_code(404);
+                    echo json_encode(["status" => 404, "code" => "CABANIA_NOT_FOUND", "error" => "Cabaña no encontrada"]);
+                } else {
+                    http_response_code(200);
+                    echo json_encode(["status" => 200, "message" => "Cabaña eliminada exitosamente"]);
+                }
+            } catch (Exception $e) {
+                http_response_code(500);
+                echo json_encode(["status" => 500, "code" => "DB_ERROR", "error" => $e->getMessage()]);
+            }
+        } else {
+            http_response_code(404);
+            echo json_encode(["status" => 404, "code" => "ROUTE_NOT_FOUND", "error" => "Ruta no encontrada en cabanias"]);
+        }
         break;
     default:
         http_response_code(404);

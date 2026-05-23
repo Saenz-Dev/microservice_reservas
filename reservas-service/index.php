@@ -185,6 +185,17 @@ function normalizarEstadoReserva($estado)
     return $mapaEstados[$estadoNormalizado] ?? null;
 }
 
+function agregarTipoReserva(array $reservas, string $tipoReserva)
+{
+    return array_map(function ($reserva) use ($tipoReserva) {
+        if (is_array($reserva)) {
+            $reserva['tipo_reserva'] = $tipoReserva;
+        }
+
+        return $reserva;
+    }, $reservas);
+}
+
 function generarFacturaAutomaticaOrFail(int $idReserva)
 {
     $internalKey = 'sistema_interno_key_12345';
@@ -260,14 +271,14 @@ switch ($method) {
 
             $query = "SELECT r.*, rc.id_cabania, c.nombre AS nombre_cabania
                       FROM reserva_cabania rc
-                      LEFT JOIN reserva r ON rc.id_reserva = r.id_reserva
-                      LEFT JOIN cabania c ON c.id_cabania = rc.id_cabania
+                      INNER JOIN reserva r ON rc.id_reserva = r.id_reserva
+                      INNER JOIN cabania c ON c.id_cabania = rc.id_cabania
                       WHERE r.id_usuario = :id_usuario
                       ORDER BY r.fecha_hora_inicio DESC";
             $statement = Conection::getInstance()->getConection()->prepare($query);
             $statement->bindValue(':id_usuario', $idUsuario, PDO::PARAM_INT);
             $statement->execute();
-            $reservasUsuario = $statement->fetchAll(PDO::FETCH_ASSOC);
+            $reservasUsuario = agregarTipoReserva($statement->fetchAll(PDO::FETCH_ASSOC), 'cabaña');
 
             http_response_code(200);
             if (empty($reservasUsuario)) {
@@ -299,13 +310,13 @@ switch ($method) {
 
             $query = "SELECT r.*, rm.id_mesa
                       FROM reserva_mesa rm
-                      LEFT JOIN reserva r ON rm.id_reserva = r.id_reserva
+                      INNER JOIN reserva r ON rm.id_reserva = r.id_reserva
                       WHERE r.id_usuario = :id_usuario
                       ORDER BY r.fecha_hora_inicio DESC";
             $statement = Conection::getInstance()->getConection()->prepare($query);
             $statement->bindValue(':id_usuario', $idUsuario, PDO::PARAM_INT);
             $statement->execute();
-            $reservasUsuario = $statement->fetchAll(PDO::FETCH_ASSOC);
+            $reservasUsuario = agregarTipoReserva($statement->fetchAll(PDO::FETCH_ASSOC), 'mesa');
 
             http_response_code(200);
             if (empty($reservasUsuario)) {
@@ -529,12 +540,12 @@ switch ($method) {
 
                 $query = "SELECT r.*, rm.id_mesa
                           FROM reserva r
-                          LEFT JOIN reserva_mesa rm ON rm.id_reserva = r.id_reserva
+                          INNER JOIN reserva_mesa rm ON rm.id_reserva = r.id_reserva
                           WHERE r.id_usuario = :id_usuario ORDER BY r.fecha_hora_inicio DESC";
                 $statement = Conection::getInstance()->getConection()->prepare($query);
                 $statement->bindValue(':id_usuario', $idUsuario, PDO::PARAM_STR);
                 $statement->execute();
-                $reservasUsuario = $statement->fetchAll(PDO::FETCH_ASSOC);
+                $reservasUsuario = agregarTipoReserva($statement->fetchAll(PDO::FETCH_ASSOC), 'mesa');
 
                 if (!empty($reservasUsuario)) {
                     http_response_code(200);
@@ -563,7 +574,7 @@ switch ($method) {
 
                 $query = "SELECT r.*, rm.id_mesa
                           FROM reserva r
-                          LEFT JOIN reserva_mesa rm ON rm.id_reserva = r.id_reserva
+                          INNER JOIN reserva_mesa rm ON rm.id_reserva = r.id_reserva
                           WHERE r.id_reserva = :id_reserva
                           LIMIT 1";
                 $statement = Conection::getInstance()->getConection()->prepare($query);
@@ -572,6 +583,7 @@ switch ($method) {
                 $reserva = $statement->fetch(PDO::FETCH_ASSOC);
 
                 if ($reserva) {
+                    $reserva['tipo_reserva'] = 'mesa';
                     http_response_code(200);
                     echo json_encode(["status" => 200] + $reserva);
                 } else {
@@ -594,7 +606,7 @@ switch ($method) {
                 $statement = Conection::getInstance()->getConection()->prepare($query);
                 $statement->bindValue(':id_mesa', (int) $idMesa, PDO::PARAM_INT);
                 $statement->execute();
-                $reservasMesa = $statement->fetchAll(PDO::FETCH_ASSOC);
+                $reservasMesa = agregarTipoReserva($statement->fetchAll(PDO::FETCH_ASSOC), 'mesa');
 
                 http_response_code(200);
                 if (empty($reservasMesa)) {
@@ -611,10 +623,10 @@ switch ($method) {
             } else {
                 $query = "SELECT r.*, rm.id_mesa
                           FROM reserva r
-                          LEFT JOIN reserva_mesa rm ON rm.id_reserva = r.id_reserva";
+                          INNER JOIN reserva_mesa rm ON rm.id_reserva = r.id_reserva";
                 $statement = Conection::getInstance()->getConection()->prepare($query);
                 $statement->execute();
-                $reservas = $statement->fetchAll(PDO::FETCH_ASSOC);
+                $reservas = agregarTipoReserva($statement->fetchAll(PDO::FETCH_ASSOC), 'mesa');
                 http_response_code(200);
                 if (empty($reservas)) {
                     echo json_encode([
@@ -644,13 +656,13 @@ switch ($method) {
 
                 $query = "SELECT r.*, rc.id_cabania, c.nombre AS nombre_cabania
                           FROM reserva r
-                          LEFT JOIN reserva_cabania rc ON rc.id_reserva = r.id_reserva
-                          LEFT JOIN cabania c ON c.id_cabania = rc.id_cabania
+                          INNER JOIN reserva_cabania rc ON rc.id_reserva = r.id_reserva
+                          INNER JOIN cabania c ON c.id_cabania = rc.id_cabania
                           WHERE r.id_usuario = :id_usuario ORDER BY r.fecha_hora_inicio DESC";
                 $statement = Conection::getInstance()->getConection()->prepare($query);
                 $statement->bindValue(':id_usuario', $idUsuario, PDO::PARAM_STR);
                 $statement->execute();
-                $reservasUsuario = $statement->fetchAll(PDO::FETCH_ASSOC);
+                $reservasUsuario = agregarTipoReserva($statement->fetchAll(PDO::FETCH_ASSOC), 'cabaña');
 
                 if (!empty($reservasUsuario)) {
                     http_response_code(200);
@@ -679,8 +691,8 @@ switch ($method) {
 
                 $query = "SELECT r.*, rc.id_cabania, c.nombre AS nombre_cabania
                           FROM reserva r
-                          LEFT JOIN reserva_cabania rc ON rc.id_reserva = r.id_reserva
-                          LEFT JOIN cabania c ON c.id_cabania = rc.id_cabania
+                          INNER JOIN reserva_cabania rc ON rc.id_reserva = r.id_reserva
+                          INNER JOIN cabania c ON c.id_cabania = rc.id_cabania
                           WHERE r.id_reserva = :id_reserva
                           LIMIT 1";
                 $statement = Conection::getInstance()->getConection()->prepare($query);
@@ -689,6 +701,7 @@ switch ($method) {
                 $reserva = $statement->fetch(PDO::FETCH_ASSOC);
 
                 if ($reserva) {
+                    $reserva['tipo_reserva'] = 'cabaña';
                     http_response_code(200);
                     echo json_encode(["status" => 200] + $reserva);
                 } else {
@@ -699,12 +712,12 @@ switch ($method) {
                 //Consulta a la base de datos para obtener todas las reservas
                 $query = "SELECT r.*, rc.id_cabania, c.nombre AS nombre_cabania
                           FROM reserva r
-                          LEFT JOIN reserva_cabania rc ON rc.id_reserva = r.id_reserva
-                          LEFT JOIN cabania c ON c.id_cabania = rc.id_cabania";
+                          INNER JOIN reserva_cabania rc ON rc.id_reserva = r.id_reserva
+                          INNER JOIN cabania c ON c.id_cabania = rc.id_cabania";
                 // Preparación del statement
                 $statement = Conection::getInstance()->getConection()->prepare($query);
                 $statement->execute();
-                $reservas = $statement->fetchAll(PDO::FETCH_ASSOC);
+                $reservas = agregarTipoReserva($statement->fetchAll(PDO::FETCH_ASSOC), 'cabaña');
                 http_response_code(200);
                 if (empty($reservas)) {
                     echo json_encode([
@@ -881,7 +894,8 @@ switch ($method) {
                     "cantidad_personas" => (int) $cantidadPersonas,
                     "descripcion" => $descripcion,
                     "nombre_cabania" => $nombreCabania,
-                    "id_cabania" => $idCabania
+                    "id_cabania" => $idCabania,
+                    "tipo_reserva" => "cabaña"
                 ]
             ]);
         } elseif ($route == '/reservas/mesas') {
@@ -1044,7 +1058,8 @@ switch ($method) {
                     "estado" => (int) $estado,
                     "cantidad_personas" => (int) $cantidadPersonas,
                     "descripcion" => $descripcion,
-                    "id_mesa" => $idMesaInt
+                    "id_mesa" => $idMesaInt,
+                    "tipo_reserva" => "mesa"
                 ]
             ]);
         } else {

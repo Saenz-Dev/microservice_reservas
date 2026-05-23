@@ -127,7 +127,14 @@ switch ($method) {
                 }
             } else {
                 //Consulta a la base de datos para obtener todos los usuarios
-                $query = "SELECT * FROM usuario";
+                $query = "SELECT u.*, c.correo,
+                                 (SELECT COUNT(*)
+                                  FROM reserva r
+                                  LEFT JOIN reserva_cabania rc ON rc.id_reserva = r.id_reserva
+                                  LEFT JOIN reserva_mesa rm ON rm.id_reserva = r.id_reserva
+                                  WHERE r.id_usuario = u.id_usuario) AS total_reservas
+                          FROM usuario u
+                          LEFT JOIN cuenta c ON c.id_usuario = u.id_usuario";
                 // Preparación del statement
                 $statement = Conection::getInstance()->getConection()->prepare($query);
                 $statement->execute();
@@ -216,9 +223,9 @@ switch ($method) {
                 echo json_encode(["status" => 400, "code" => "MISSING_FIELDS", "error" => "Todos los campos son obligatorios"]);
                 break;
             }
-            if (!in_array($body['tipo_documento'], ['CC', 'CE'])) {
+            if (!in_array($body['tipo_documento'], ['CC', 'TI', 'CE'])) {
                 http_response_code(400);
-                echo json_encode(["status" => 400, "code" => "INVALID_TIPO_DOCUMENTO", "error" => "El campo Tipo de documento debe ser CC o CE"]);
+                echo json_encode(["status" => 400, "code" => "INVALID_TIPO_DOCUMENTO", "error" => "El campo Tipo de documento debe ser CC, TI o CE"]);
                 break;
             }
             if (!preg_match('/^\d{7,10}$/', $body['numero_documento'])) {
@@ -236,6 +243,11 @@ switch ($method) {
                 echo json_encode(["status" => 400, "code" => "INVALID_ESTADO", "error" => "El campo Estado debe ser 0 o 1"]);
                 break;
             }
+            if (isset($body['correo']) && trim((string) $body['correo']) !== '' && !filter_var($body['correo'], FILTER_VALIDATE_EMAIL)) {
+                http_response_code(400);
+                echo json_encode(["status" => 400, "code" => "INVALID_CORREO", "error" => "El campo Correo debe ser un correo electrónico válido"]);
+                break;
+            }
 
             $queryUsuario = "UPDATE usuario SET nombres = :nombres, apellidos = :apellidos, tipo_documento = :tipo_documento, numero_documento = :numero_documento, telefono = :telefono, ciudad = :ciudad, fecha_nacimiento = :fecha_nacimiento, estado = :estado, id_rol = :id_rol WHERE id_usuario = :id_usuario";
             $statementUsuario = Conection::getInstance()->getConection()->prepare($queryUsuario);
@@ -250,13 +262,15 @@ switch ($method) {
             $statementUsuario->bindValue(':id_rol', $body['id_rol']);
             $statementUsuario->bindValue(':id_usuario', $body['id_usuario']);
             $statementUsuario->execute();
-            // $idUsuario = Conection::getInstance()->getConection()->lastInsertId();
-            // $queryCuenta = "INSERT INTO cuenta (correo, contrasena, id_usuario, estado_sesion) VALUES (:correo, :contrasena, :id_usuario, 0)";
-            // $statementCuenta = Conection::getInstance()->getConection()->prepare($queryCuenta);
-            // $statementCuenta->bindValue(':correo', $body['correo']); 
-            // $statementCuenta->bindValue(':contrasena', password_hash($body['contrasena'], PASSWORD_BCRYPT));
-            // $statementCuenta->bindValue(':id_usuario', $idUsuario);
-            // $statementCuenta->execute();
+
+            if (isset($body['correo']) && trim((string) $body['correo']) !== '') {
+                $queryCuenta = "UPDATE cuenta SET correo = :correo WHERE id_usuario = :id_usuario";
+                $statementCuenta = Conection::getInstance()->getConection()->prepare($queryCuenta);
+                $statementCuenta->bindValue(':correo', trim((string) $body['correo']));
+                $statementCuenta->bindValue(':id_usuario', $body['id_usuario']);
+                $statementCuenta->execute();
+            }
+
             http_response_code(200);
             echo json_encode(["status" => 200, "message" => "Usuario actualizado exitosamente"]);
         } else {
@@ -268,26 +282,44 @@ switch ($method) {
         if (!validarTokenOrFail()) {
             break;
         }
-        if (!validarTokenOrFail()) {
-            break;
-        }
         if ($route == '/usuarios') {
             $body = json_decode(file_get_contents("php://input"), true);
-            if (!isset($body['correo'])) {
+            $idUsuario = trim((string) ($body['id_usuario'] ?? $_GET['id_usuario'] ?? $_GET['id'] ?? ''));
+            $correo = trim((string) ($body['correo'] ?? $_GET['correo'] ?? ''));
+
+            if ($idUsuario === '' && $correo === '') {
                 http_response_code(400);
-                echo json_encode(["status" => 400, "code" => "MISSING_CORREO", "error" => "El campo correo es obligatorio"]);
+                echo json_encode(["status" => 400, "code" => "MISSING_IDENTIFIER", "error" => "Debe enviar id_usuario o correo"]);
                 break;
             }
-            $query = "UPDATE usuario SET estado = 0 WHERE id_usuario = (SELECT id_usuario FROM cuenta WHERE correo = :correo LIMIT 1)";
-            $statement = Conection::getInstance()->getConection()->prepare($query);
-            $statement->bindValue(':correo', $body['correo']);
+            $pdo = Conection::getInstance()->getConection();
+
+            if ($idUsuario !== '') {
+                $query = "UPDATE usuario SET estado = 0 WHERE id_usuario = :id_usuario";
+                $statement = $pdo->prepare($query);
+                $statement->bindValue(':id_usuario', (int) $idUsuario, PDO::PARAM_INT);
+            } else {
+                $query = "UPDATE usuario SET estado = 0 WHERE id_usuario = (SELECT id_usuario FROM cuenta WHERE correo = :correo LIMIT 1)";
+                $statement = $pdo->prepare($query);
+                $statement->bindValue(':correo', $correo, PDO::PARAM_STR);
+            }
+
             $statement->execute();
-            $queryEstadoUsuario = "SELECT estado FROM usuario WHERE id_usuario = (SELECT id_usuario FROM cuenta WHERE correo = :correo LIMIT 1)";
-            $statementEstadoUsuario = Conection::getInstance()->getConection()->prepare($queryEstadoUsuario);
-            $statementEstadoUsuario->bindValue(':correo', $body['correo']);
+
+            if ($idUsuario !== '') {
+                $queryEstadoUsuario = "SELECT estado FROM usuario WHERE id_usuario = :id_usuario";
+                $statementEstadoUsuario = $pdo->prepare($queryEstadoUsuario);
+                $statementEstadoUsuario->bindValue(':id_usuario', (int) $idUsuario, PDO::PARAM_INT);
+            } else {
+                $queryEstadoUsuario = "SELECT estado FROM usuario WHERE id_usuario = (SELECT id_usuario FROM cuenta WHERE correo = :correo LIMIT 1)";
+                $statementEstadoUsuario = $pdo->prepare($queryEstadoUsuario);
+                $statementEstadoUsuario->bindValue(':correo', $correo, PDO::PARAM_STR);
+            }
+
             $statementEstadoUsuario->execute();
             $estadoUsuario = $statementEstadoUsuario->fetch(PDO::FETCH_ASSOC);
-            if ($estadoUsuario && $estadoUsuario['estado'] == 0) {
+
+            if ($estadoUsuario && (string) $estadoUsuario['estado'] === '0') {
                 http_response_code(200);
                 echo json_encode(["status" => 200, "message" => "Usuario eliminado exitosamente"]);
             } else {
